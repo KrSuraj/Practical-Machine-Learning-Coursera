@@ -1,0 +1,136 @@
+---
+title: "Practical Machine Learning Assignment"
+author: "Kumar Suraj"
+date: "30 May 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, the goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+
+The goal of the project is to predict the manner in which people did the exercise. This is the "classe" variable in the training set.
+
+```{r Load Data, message=FALSE}
+#import libraries
+library(caret)
+library(rpart)
+library(randomForest)
+library(rattle)
+
+#loading the dataset
+data = read.csv('C:/Users/Kumar Suraj/Desktop/Acads/Others/pml-training.csv', na.strings = c("NA", ""))
+
+#dividing into training and validationidation data
+set.seed(112)
+intrain = createDataPartition(data$classe, p = 0.75, list = F)
+training = data[intrain, ]
+val = data[-intrain, ]
+```
+
+
+```{r}
+dim(val)
+```
+
+```{r}
+dim(training)
+```
+##Data Preprocessing
+
+Data was checked for near zero variance, and columns with near zero variance were removed from the training dataset.
+
+```{r preProcessing}
+nzvCols = nearZeroVar(training, saveMetrics = F)
+newtrain = training[,-nzvCols]
+```
+
+```{r}
+dim(newtrain)
+```
+
+Columns with more than 50% validationues as NA were also removed. Also, removed the first column.
+
+```{r}
+# data preprocessing
+
+manyNA = sapply(newtrain, function(x){sum(is.na(x))/nrow(data)})>0.01
+sum(manyNA)
+newtrain2 = newtrain[,manyNA == FALSE]
+sum(sapply(newtrain2, function(x){sum(is.na(x))/nrow(data)})>0.01)
+
+```
+
+```{r}
+dim(newtrain2)
+```
+
+```{r}
+newtrain3 = newtrain2[,-1]
+newtrain3 = newtrain3[, -c(newtrain3$cvtd_timestamp)]
+newtrain3$classe = factor(newtrain3$classe)
+```
+
+##Decision Tree
+Initially, decision tree was fitted, and the model was checked for accuracy and kappa values on the validation set.
+
+```{r decision tree}
+
+#dtree
+set.seed(12345)
+treemodel = rpart(classe ~ ., data = newtrain3)
+fancyRpartPlot(treemodel)
+treepred = predict(treemodel, newdata = val, type = 'class')
+levels(treepred)
+cfmat = confusionMatrix(treepred, val$classe)
+cfmat
+plot(cfmat$table, col = cfmat$byClass, 
+     main = paste("Random Forest - Accuracy =",
+                  round(cfmat$overall['Accuracy'], 4)))
+
+```
+
+Next, random forest model was fitted which resulted in near perfect (accuracy 0.999) prediction on test set.
+
+```{r Random Forest}
+#rf
+set.seed(1234)
+rfmodel = randomForest(classe~., newtrain3 )
+rfpred = predict(rfmodel, newdata = val, method = 'class')
+cfmat = confusionMatrix(rfpred, val$classe)
+cfmat
+plot(cfmat$table, col = cfmat$byClass, 
+     main = paste("Random Forest - Accuracy =",
+                  round(cfmat$overall['Accuracy'], 4)))
+
+```
+
+
+## Generalized Boosted Model
+```{r gbm}
+#gbm
+set.seed(1123)
+gbmmodel = train(classe~., data = newtrain3, method = "gbm", verbose = F,  trControl= trainControl(method = "repeatedcv", number = 5, repeats = 1))
+gbmpred = predict(gbmmodel, newdata = val)
+cfmat = confusionMatrix(gbmpred, val$classe)
+cfmat
+plot(cfmat$table, col = cfmat$byClass, 
+     main = paste("Random Forest - Accuracy =",
+                  round(cfmat$overall['Accuracy'], 4)))
+
+```
+
+
+## Prediction on Test set
+Since randm forest model performed best on the validation set, it was chosen for predicting on the test set.
+```{r}
+
+#Prediction on the test set
+testing = read.csv('C:/Users/Kumar Suraj/Desktop/Acads/Others/pml-testing.csv', na.strings = c("NA", ""))
+newtesting = testing[,names(testing)%in%names(newtrain3)]
+prediction = predict(rfmodel, newdata =  newtesting, method = 'class' )
+prediction
+```
